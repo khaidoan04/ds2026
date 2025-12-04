@@ -11,4 +11,4 @@ Student Info
 
 * Student Name: Doan Dinh Khai
 * Student ID: 22BA13167
-* Student Group ID: Not-for-now
+* Student Group ID: 16
