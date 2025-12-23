@@ -1,0 +1,230 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+}
+
+\title{Practical Work 7: Sudoku on Google App Engine (GAE)}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Project Overview}
+
+This practical work implements a simple Sudoku web application deployed on
+Google App Engine (GAE) using Python and Flask. The application allows users
+to input a Sudoku puzzle, solve it on the server side, and display the
+completed grid in the browser.
+
+\section*{Application Structure}
+
+The project is organised as follows:
+
+\begin{lstlisting}[language=bash,caption={Project structure}]
+practice_7/
+  app.yaml
+  main.py
+  requirements.txt
+  07.sudoku.tex
+\end{lstlisting}
+
+\begin{itemize}
+  \item \texttt{main.py}: Flask application and Sudoku solver logic.
+  \item \texttt{app.yaml}: GAE configuration file (runtime and entrypoint).
+  \item \texttt{requirements.txt}: Python dependencies (Flask).
+  \item \texttt{07.sudoku.tex}: LaTeX report for this practical work.
+\end{itemize}
+
+\section*{Google App Engine Configuration}
+
+The \texttt{app.yaml} file defines the runtime and entrypoint:
+
+\begin{lstlisting}[language=yaml,caption={app.yaml}]
+runtime: python312
+
+entrypoint: gunicorn -b :$PORT main:app
+
+handlers:
+  - url: /.*
+    script: auto
+\end{lstlisting}
+
+This configuration:
+\begin{itemize}
+  \item Uses the Python 3.12 runtime.
+  \item Starts the Flask application via Gunicorn.
+  \item Routes all URLs to the application.
+\end{itemize}
+
+Python dependencies are declared in \texttt{requirements.txt}:
+
+\begin{lstlisting}[language=bash,caption={requirements.txt}]
+Flask==3.0.0
+\end{lstlisting}
+
+\section*{Sudoku Application Design}
+
+\subsection*{Flask Application}
+
+The application is built with a single Flask instance:
+
+\begin{lstlisting}[language=Python,caption={Flask setup}]
+from flask import Flask, render_template_string, request
+
+app = Flask(__name__)
+\end{lstlisting}
+
+The root route \texttt{/} handles both \texttt{GET} and \texttt{POST} requests.
+On \texttt{GET}, it displays an empty Sudoku grid. On \texttt{POST}, it either
+solves the puzzle or clears the board, depending on the button clicked.
+
+\subsection*{Board Representation}
+
+The Sudoku board is represented as a 9×9 matrix of integers:
+
+\begin{lstlisting}[language=Python,caption={Empty board}]
+EMPTY_BOARD = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0],
+]
+\end{lstlisting}
+
+User input from the HTML form is converted to this matrix using
+\texttt{parse\_board()}, which reads each cell, validates digits 1–9, and
+stores zeros for empty or invalid entries.
+
+\section*{Sudoku Solver Logic}
+
+The solver uses a classic backtracking algorithm with three main functions:
+
+\begin{itemize}
+  \item \texttt{is\_valid(board, row, col, num)}: Checks if placing a number in
+        a specific cell is valid according to Sudoku rules (row, column,
+        and 3×3 subgrid).
+  \item \texttt{solve\_sudoku(board)}: Recursively searches for a solution by
+        trying numbers 1–9 in each empty cell.
+  \item \texttt{board\_to\_strings(board)}: Converts the numeric board into
+        strings for display in the HTML form.
+\end{itemize}
+
+\begin{lstlisting}[language=Python,caption={Validation and solver}]
+def is_valid(board, row, col, num):
+    for c in range(9):
+        if board[row][c] == num:
+            return False
+    for r in range(9):
+        if board[r][col] == num:
+            return False
+    start_row = (row // 3) * 3
+    start_col = (col // 3) * 3
+    for r in range(start_row, start_row + 3):
+        for c in range(start_col, start_col + 3):
+            if board[r][c] == num:
+                return False
+    return True
+
+def solve_sudoku(board):
+    for row in range(9):
+        for col in range(9):
+            if board[row][col] == 0:
+                for num in range(1, 10):
+                    if is_valid(board, row, col, num):
+                        board[row][col] = num
+                        if solve_sudoku(board):
+                            return True
+                        board[row][col] = 0
+                return False
+    return True
+\end{lstlisting}
+
+\section*{User Interface}
+
+The HTML interface is defined as a template string rendered with
+\texttt{render\_template\_string()}. The grid is built as a 9×9 table with
+input fields:
+
+\begin{itemize}
+  \item Each cell is named \texttt{cell-r-c} where \texttt{r} and \texttt{c}
+        are row and column indices.
+  \item Two buttons are provided: \textbf{Solve} and \textbf{Clear}.
+  \item Simple CSS styling highlights 3×3 subgrids and centers the board.
+  \item A message area displays errors (e.g. unsolvable puzzles).
+\end{itemize}
+
+On \textbf{Solve}, the server parses the board, runs the solver, and returns
+the completed grid. On \textbf{Clear}, the board is reset to an empty state.
+
+\section*{Deployment on Google App Engine}
+
+Steps to deploy the application:
+
+\begin{enumerate}
+  \item Create a new project on \texttt{https://console.cloud.google.com}.
+  \item Install and configure the Google Cloud SDK.
+  \item Navigate to the \texttt{practice\_7} directory:
+    \begin{lstlisting}[language=bash]
+gcloud init
+gcloud auth login
+cd practice_7
+gcloud app deploy
+    \end{lstlisting}
+  \item Open the application in a browser:
+    \begin{lstlisting}[language=bash]
+gcloud app browse
+    \end{lstlisting}
+\end{enumerate}
+
+GAE automatically installs dependencies from \texttt{requirements.txt} and
+starts the application according to \texttt{app.yaml}.
+
+\section*{Group Work}
+
+\textbf{Project Structure and Design:}
+The group discussed and agreed on using Flask on GAE for a lightweight
+Sudoku web application. One member designed the application structure and
+configured the GAE deployment files (\texttt{app.yaml}, \texttt{requirements.txt}).
+
+\textbf{Implementation:}
+The Sudoku solver and Flask routes were implemented collaboratively. The
+backtracking algorithm was tested with multiple puzzles to ensure correctness.
+The HTML/CSS layout was refined to provide a clean and simple user interface.
+
+\textbf{Testing and Deployment:}
+Group members tested the application locally using the Flask development
+server and then deployed it to GAE using the Google Cloud SDK. Each member
+verified that the application worked from their browser and that puzzles were
+solved correctly.
+
+\textbf{Report Writing:}
+This report was written in \LaTeX{}, documenting the application structure,
+implementation details, important code snippets, and group responsibilities.
+All members reviewed the report before submission.
+
+\end{document}
+
+
