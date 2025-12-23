@@ -1,0 +1,193 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+}
+
+\title{Practical Work 3: MPI File Transfer}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{MPI Implementation Choice}
+
+For this practical work, we chose to use \texttt{mpi4py}, which is a Python binding for the Message Passing Interface (MPI) standard. The underlying MPI implementation can be OpenMPI, MPICH, or MS-MPI depending on the operating system.
+
+\textbf{Operating System and Environment:} The implementation was developed on Windows 10 using Python 3.x. The system requires an MPI runtime library (such as MS-MPI for Windows or OpenMPI/MPICH for Linux) to be installed on the system.
+
+\textbf{Installation Method:} The \texttt{mpi4py} package can be installed using pip:
+\begin{lstlisting}[language=bash]
+pip install mpi4py
+\end{lstlisting}
+On Windows, MS-MPI must be installed separately from Microsoft's website. On Linux, the MPI runtime is typically available through package managers (e.g., \texttt{apt-get install openmpi-bin} or \texttt{apt-get install mpich}).
+
+\textbf{Advantages:}
+\begin{itemize}
+  \item \texttt{mpi4py} provides a clean Python interface to MPI, making it easy to prototype and develop MPI applications.
+  \item It supports both point-to-point and collective communication operations.
+  \item Python's built-in data structures (dictionaries, lists) can be directly sent via MPI, simplifying metadata exchange.
+  \item Cross-platform compatibility when using standard MPI implementations.
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+  \item Performance overhead compared to native C/C++ MPI implementations due to Python's interpreted nature.
+  \item For very large files, loading the entire file into memory may not be feasible; chunked transfer would be more appropriate.
+  \item Requires both MPI runtime and Python environment to be properly configured.
+\end{itemize}
+
+\section*{MPI Service Design}
+
+Our MPI file transfer system uses a simple two-process architecture:
+
+\textbf{Rank Roles:}
+\begin{itemize}
+  \item \textbf{Rank 0 (Sender):} Reads a file from the local filesystem and sends it to rank 1 using MPI point-to-point communication.
+  \item \textbf{Rank 1 (Receiver):} Receives the file metadata and data from rank 0, then writes it to disk with a prefixed filename.
+\end{itemize}
+
+\textbf{Metadata Exchange:}
+The system exchanges metadata as a Python dictionary containing:
+\begin{itemize}
+  \item \texttt{name}: The original filename (basename only).
+  \item \texttt{size}: The file size in bytes.
+\end{itemize}
+This metadata is sent first using tag 0, allowing the receiver to prepare for the incoming file transfer.
+
+\textbf{File Transfer Strategy:}
+The current implementation sends the entire file as a single message after loading it into memory. This approach is simple and works well for small to medium-sized files. For production use with large files, a chunked transfer strategy would be more memory-efficient, sending the file in fixed-size blocks (e.g., 64KB or 1MB chunks) and using a loop to transfer all chunks sequentially.
+
+\textbf{Data Flow:}
+\begin{enumerate}
+  \item Rank 0 reads the file from disk into memory.
+  \item Rank 0 sends metadata dictionary to rank 1 (tag 0).
+  \item Rank 1 receives metadata and prepares for file reception.
+  \item Rank 0 sends file bytes to rank 1 (tag 1).
+  \item Rank 1 receives file bytes and writes to disk as \texttt{MPI\_RECV\_<filename>}.
+\end{enumerate}
+
+\section*{System Organization}
+
+\textbf{Directory Structure:}
+The project is organized as follows:
+\begin{lstlisting}[language=bash]
+ds2026-main/
+  practice_3/
+    mpi_file_transfer.py
+    03.mpi.file.transfer.tex
+\end{lstlisting}
+
+The main implementation file \texttt{mpi\_file\_transfer.py} contains three functions:
+\begin{itemize}
+  \item \texttt{sender()}: Handles file reading and sending (rank 0).
+  \item \texttt{receiver()}: Handles file reception and writing (rank 1).
+  \item \texttt{main()}: Initializes MPI, checks process count, and routes execution based on rank.
+\end{itemize}
+
+\textbf{Command to Start the System:}
+The system is launched using \texttt{mpiexec} (or \texttt{mpirun} on some systems) with exactly 2 processes:
+\begin{lstlisting}[language=bash]
+mpiexec -n 2 python mpi_file_transfer.py <path_to_file>
+\end{lstlisting}
+The file path is provided as a command-line argument and is only used by rank 0. Rank 1 automatically waits for incoming data.
+
+\textbf{Testing:}
+Testing can be performed by:
+\begin{itemize}
+  \item Creating a test file of various sizes (small text file, medium binary file, etc.).
+  \item Running the transfer command and verifying the received file matches the original.
+  \item Checking that the received filename is prefixed with \texttt{MPI\_RECV\_}.
+  \item Verifying file integrity using checksums (e.g., MD5 or SHA256) if needed.
+\end{itemize}
+
+\section*{File Transfer Implementation}
+
+\textbf{Rank 0 (Sender) Actions:}
+\begin{enumerate}
+  \item Validates that the file exists and is accessible.
+  \item Extracts the filename (basename) and file size.
+  \item Reads the entire file into memory as bytes.
+  \item Sends metadata dictionary \texttt{\{"name": filename, "size": file\_size\}} to rank 1 using \texttt{comm.send()} with tag 0.
+  \item Sends the file bytes to rank 1 using \texttt{comm.send()} with tag 1.
+  \item Prints confirmation messages for debugging.
+\end{enumerate}
+
+\textbf{Rank 1 (Receiver) Actions:}
+\begin{enumerate}
+  \item Waits to receive metadata from rank 0 using \texttt{comm.recv()} with tag 0.
+  \item Extracts filename and expected file size from metadata.
+  \item Waits to receive file bytes from rank 0 using \texttt{comm.recv()} with tag 1.
+  \item Constructs output filename as \texttt{MPI\_RECV\_<original\_filename>}.
+  \item Writes received bytes to disk.
+  \item Prints confirmation messages showing the received file path and size.
+\end{enumerate}
+
+\textbf{MPI Communication Primitives Used:}
+\begin{itemize}
+  \item \texttt{MPI.COMM\_WORLD}: The default communicator containing all processes.
+  \item \texttt{comm.rank}: The rank (process ID) of the current process (0 or 1).
+  \item \texttt{comm.size}: Total number of processes (must be 2).
+  \item \texttt{comm.send(obj, dest, tag)}: Sends a Python object to the destination rank with a tag for message identification.
+  \item \texttt{comm.recv(source, tag)}: Receives a Python object from the source rank matching the specified tag.
+\end{itemize}
+
+The use of tags (0 for metadata, 1 for file data) ensures that messages are received in the correct order and prevents confusion between different message types.
+
+\begin{lstlisting}[language=Python,caption={Core MPI file transfer implementation}]
+def sender(comm: MPI.Comm, filepath: str) -> None:
+    filename = os.path.basename(filepath)
+    file_size = os.path.getsize(filepath)
+    
+    with open(filepath, "rb") as f:
+        file_bytes = f.read()
+    
+    meta = {"name": filename, "size": file_size}
+    comm.send(meta, dest=1, tag=0)
+    comm.send(file_bytes, dest=1, tag=1)
+
+def receiver(comm: MPI.Comm, output_dir: str = ".") -> None:
+    meta = comm.recv(source=0, tag=0)
+    filename = meta["name"]
+    file_bytes = comm.recv(source=0, tag=1)
+    
+    recv_name = f"MPI_RECV_{os.path.basename(filename)}"
+    output_path = os.path.join(output_dir, recv_name)
+    
+    with open(output_path, "wb") as f:
+        f.write(file_bytes)
+\end{lstlisting}
+
+\section*{Group Work and Responsibilities}
+
+\textbf{Design and Choice of MPI Implementation:}
+The decision to use \texttt{mpi4py} was made collaboratively, considering the team's familiarity with Python and the need for rapid prototyping. The two-process architecture (sender/receiver) was chosen for simplicity and clarity.
+
+\textbf{Implementation of Sender and Receiver:}
+The sender and receiver functions were implemented following the MPI point-to-point communication pattern. The code handles file I/O, metadata packaging, and MPI message passing. Error handling includes file existence checks and process count validation.
+
+\textbf{Testing and Debugging:}
+Testing involved transferring files of various sizes and types to ensure correct data transfer. Debugging focused on verifying message ordering using tags and ensuring file integrity after transfer. Print statements were added to track the transfer progress.
+
+\textbf{Writing and Formatting the \LaTeX{} Report:}
+The report was written in \LaTeX{} to provide a professional document structure. Code snippets were formatted using the \texttt{listings} package for syntax highlighting. The report covers all required sections: implementation choice, design, organization, implementation details, and group responsibilities.
+
+\end{document}
+
+
