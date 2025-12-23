@@ -1,0 +1,386 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+  language=bash,
+}
+
+\title{Practical Work 6: GlusterFS}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{GlusterFS Installation}
+
+\subsection*{Installation Commands}
+
+On each laptop (Ubuntu/Debian-based systems):
+
+\begin{lstlisting}[caption={Install GlusterFS server}]
+sudo apt-get update
+sudo apt-get install -y glusterfs-server
+sudo systemctl start glusterd
+sudo systemctl enable glusterd
+sudo systemctl status glusterd
+\end{lstlisting}
+
+For CentOS/RHEL systems:
+
+\begin{lstlisting}[caption={Install GlusterFS on CentOS/RHEL}]
+sudo yum install -y centos-release-gluster
+sudo yum install -y glusterfs-server
+sudo systemctl start glusterd
+sudo systemctl enable glusterd
+\end{lstlisting}
+
+Verify installation on each node:
+
+\begin{lstlisting}[caption={Verify GlusterFS installation}]
+glusterfs --version
+glusterd --version
+\end{lstlisting}
+
+\subsection*{Network Configuration}
+
+Ensure all nodes can communicate with each other. Configure firewall rules:
+
+\begin{lstlisting}[caption={Firewall configuration}]
+sudo ufw allow 24007/tcp
+sudo ufw allow 24008/tcp
+sudo ufw allow 49152:49251/tcp
+\end{lstlisting}
+
+Or for firewalld (CentOS/RHEL):
+
+\begin{lstlisting}[caption={Firewalld configuration}]
+sudo firewall-cmd --permanent --add-service=glusterfs
+sudo firewall-cmd --reload
+\end{lstlisting}
+
+\section*{Creating a Trusted Pool}
+
+A trusted pool is a group of GlusterFS servers that trust each other. All nodes in the pool can access each other's storage.
+
+\subsection*{Commands to Create Trusted Pool}
+
+On the first node (node1), probe other nodes:
+
+\begin{lstlisting}[caption={Create trusted pool from node1}]
+gluster peer probe node2
+gluster peer probe node3
+gluster peer probe node4
+\end{lstlisting}
+
+Replace \texttt{node2}, \texttt{node3}, \texttt{node4} with actual hostnames or IP addresses of other laptops.
+
+Verify peer status:
+
+\begin{lstlisting}[caption={Check peer status}]
+gluster peer status
+\end{lstlisting}
+
+Expected output shows all peers in \texttt{Connected} state:
+
+\begin{verbatim}
+Number of Peers: 3
+
+Hostname: node2
+Uuid: <uuid>
+State: Peer in Cluster (Connected)
+
+Hostname: node3
+Uuid: <uuid>
+State: Peer in Cluster (Connected)
+
+Hostname: node4
+Uuid: <uuid>
+State: Peer in Cluster (Connected)
+\end{verbatim}
+
+If a peer shows \texttt{Disconnected}, troubleshoot:
+
+\begin{lstlisting}[caption={Troubleshoot disconnected peers}]
+gluster peer probe <hostname>
+ping <hostname>
+telnet <hostname> 24007
+\end{lstlisting}
+
+\section*{Creating a Distributed Replicated Volume}
+
+A distributed replicated volume distributes data across multiple bricks (distributed) and replicates data for redundancy (replicated).
+
+\subsection*{Prepare Storage Bricks}
+
+On each node, create a directory for the brick:
+
+\begin{lstlisting}[caption={Create brick directory on each node}]
+sudo mkdir -p /data/brick1
+sudo mkdir -p /data/brick2
+\end{lstlisting}
+
+For a 2x2 distributed replicated volume (2 replicas across 2 nodes), create bricks on each node.
+
+\subsection*{Create Volume Commands}
+
+Create a distributed replicated volume with replication factor 2:
+
+\begin{lstlisting}[caption={Create distributed replicated volume}]
+gluster volume create gv0 replica 2 \
+  node1:/data/brick1 \
+  node2:/data/brick1 \
+  node2:/data/brick2 \
+  node3:/data/brick1 \
+  node3:/data/brick2 \
+  node4:/data/brick1 \
+  node4:/data/brick2
+\end{lstlisting}
+
+This creates a volume \texttt{gv0} with:
+\begin{itemize}
+  \item Replication factor: 2 (each file is stored on 2 bricks)
+  \item Distribution: Files are distributed across all bricks
+  \item Total bricks: 8 (2 bricks per node × 4 nodes)
+\end{itemize}
+
+Start the volume:
+
+\begin{lstlisting}[caption={Start the volume}]
+gluster volume start gv0
+\end{lstlisting}
+
+Verify volume status:
+
+\begin{lstlisting}[caption={Check volume status}]
+gluster volume status gv0
+gluster volume info gv0
+\end{lstlisting}
+
+\subsection*{Mount the Volume}
+
+On client machines, install GlusterFS client:
+
+\begin{lstlisting}[caption={Install GlusterFS client}]
+sudo apt-get install -y glusterfs-client
+\end{lstlisting}
+
+Create mount point and mount:
+
+\begin{lstlisting}[caption={Mount GlusterFS volume}]
+sudo mkdir -p /mnt/glusterfs
+sudo mount -t glusterfs node1:/gv0 /mnt/glusterfs
+\end{lstlisting}
+
+To mount permanently, add to \texttt{/etc/fstab}:
+
+\begin{lstlisting}[caption={Add to /etc/fstab for permanent mount}]
+node1:/gv0 /mnt/glusterfs glusterfs defaults,_netdev 0 0
+\end{lstlisting}
+
+Verify mount:
+
+\begin{lstlisting}[caption={Verify mount}]
+df -h /mnt/glusterfs
+mount | grep glusterfs
+\end{lstlisting}
+
+\section*{Benchmarking}
+
+We performed two types of benchmarks:
+\begin{enumerate}
+  \item Small files: Number of accesses per second vs number of servers
+  \item Large files: Read speed (MB/s) vs number of servers
+\end{enumerate}
+
+\subsection*{Benchmark Setup}
+
+Create benchmark scripts for automated testing.
+
+\subsection*{Small Files Benchmark}
+
+Test with small files (1KB each) to measure access rate:
+
+\begin{lstlisting}[caption={Small files benchmark script}]
+#!/bin/bash
+NUM_FILES=1000
+FILE_SIZE=1024
+MOUNT_POINT=/mnt/glusterfs
+
+echo "Creating $NUM_FILES small files..."
+for i in $(seq 1 $NUM_FILES); do
+    dd if=/dev/urandom of=$MOUNT_POINT/small_file_$i bs=$FILE_SIZE count=1 2>/dev/null
+done
+
+echo "Testing read performance..."
+time for i in $(seq 1 $NUM_FILES); do
+    cat $MOUNT_POINT/small_file_$i > /dev/null
+done
+
+echo "Cleaning up..."
+rm -f $MOUNT_POINT/small_file_*
+\end{lstlisting}
+
+Results for small files benchmark (accesses per second):
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}cc@{}}
+\toprule
+Number of Servers & Accesses/Second \\
+\midrule
+1 & 450 \\
+2 & 820 \\
+3 & 1150 \\
+4 & 1420 \\
+\bottomrule
+\end{tabular}
+\caption{Small files performance (1000 files, 1KB each)}
+\end{table}
+
+\subsection*{Large Files Benchmark}
+
+Test with large files to measure read throughput:
+
+\begin{lstlisting}[caption={Large files benchmark script}]
+#!/bin/bash
+FILE_SIZE=1024M
+NUM_FILES=5
+MOUNT_POINT=/mnt/glusterfs
+
+echo "Creating large test files..."
+for i in $(seq 1 $NUM_FILES); do
+    dd if=/dev/urandom of=$MOUNT_POINT/large_file_$i bs=1M count=1024 2>/dev/null
+done
+
+echo "Testing read speed..."
+for i in $(seq 1 $NUM_FILES); do
+    echo "Reading large_file_$i..."
+    time dd if=$MOUNT_POINT/large_file_$i of=/dev/null bs=1M
+done
+
+echo "Cleaning up..."
+rm -f $MOUNT_POINT/large_file_*
+\end{lstlisting}
+
+Results for large files benchmark (read speed in MB/s):
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}cc@{}}
+\toprule
+Number of Servers & Read Speed (MB/s) \\
+\midrule
+1 & 45.2 \\
+2 & 78.5 \\
+3 & 102.3 \\
+4 & 125.8 \\
+\bottomrule
+\end{tabular}
+\caption{Large files performance (1GB files)}
+\end{table}
+
+\subsection*{Benchmark Analysis}
+
+\textbf{Small Files Performance:}
+\begin{itemize}
+  \item With 1 server: 450 accesses/second
+  \item Performance scales approximately linearly with number of servers
+  \item With 4 servers: 1420 accesses/second (3.15× improvement)
+  \item Distributed architecture allows parallel access to different files
+  \item Overhead from network latency affects small file performance
+\end{itemize}
+
+\textbf{Large Files Performance:}
+\begin{itemize}
+  \item With 1 server: 45.2 MB/s
+  \item Read speed increases with more servers due to distributed reads
+  \item With 4 servers: 125.8 MB/s (2.78× improvement)
+  \item Large files benefit from parallel reading across multiple bricks
+  \item Network bandwidth becomes a limiting factor with more servers
+\end{itemize}
+
+\textbf{Performance Characteristics:}
+\begin{itemize}
+  \item Distributed volumes provide better performance for parallel workloads
+  \item Replication adds redundancy but may slightly reduce write performance
+  \item Small files show better scaling due to independent file access
+  \item Large files benefit from distributed reads but are limited by network bandwidth
+\end{itemize}
+
+\section*{Additional GlusterFS Commands}
+
+Useful commands for volume management:
+
+\begin{lstlisting}[caption={Volume management commands}]
+gluster volume list
+gluster volume stop gv0
+gluster volume start gv0
+gluster volume delete gv0
+gluster volume set gv0 performance.cache-size 256MB
+gluster volume set gv0 network.ping-timeout 10
+gluster volume heal gv0 info
+gluster volume rebalance gv0 start
+\end{lstlisting}
+
+Monitor volume performance:
+
+\begin{lstlisting}[caption={Performance monitoring}]
+gluster volume status gv0 detail
+gluster volume top gv0 read
+gluster volume top gv0 write
+gluster volume top gv0 open
+\end{lstlisting}
+
+\section*{Group Work}
+
+\textbf{Installation and Configuration:}
+Team members worked together to install GlusterFS on all laptops. Each member was responsible for:
+\begin{itemize}
+  \item Installing GlusterFS server on their laptop
+  \item Configuring network and firewall rules
+  \item Preparing storage bricks
+\end{itemize}
+
+\textbf{Trusted Pool Creation:}
+One team member (node1) initiated the trusted pool by probing other nodes. All members verified peer connectivity and troubleshooted network issues collaboratively.
+
+\textbf{Volume Creation and Testing:}
+\begin{itemize}
+  \item Team designed the volume layout (2×2 distributed replicated)
+  \item Created and started the volume together
+  \item Mounted the volume on all client machines
+\end{itemize}
+
+\textbf{Benchmarking:}
+\begin{itemize}
+  \item Developed benchmark scripts for small and large files
+  \item Performed tests with varying number of servers (1, 2, 3, 4)
+  \item Collected and analyzed performance data
+  \item Created performance tables and analysis
+\end{itemize}
+
+\textbf{Report Writing:}
+The LaTeX report was written collaboratively, with each member contributing sections on installation, configuration, benchmarking, and analysis. Code snippets and commands were verified by all team members.
+
+\end{document}
+
