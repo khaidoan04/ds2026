@@ -1,0 +1,252 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+}
+
+\title{Practical Work 4: Word Count}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{MapReduce Implementation Choice}
+
+For this practical work, we implemented a Word Count application using a Python-based MapReduce pattern that follows the standard MapReduce programming model. This implementation can run standalone on a single machine or be adapted to work with Hadoop Streaming for distributed execution.
+
+\textbf{Operating System and Setup:}
+The implementation was developed on Windows 10 using Python 3.x. The system uses standard Python libraries (\texttt{sys}, \texttt{re}, \texttt{subprocess}) and does not require any external MapReduce framework installation for basic operation. This makes it accessible and easy to test without setting up a Hadoop cluster.
+
+\textbf{Installation and Configuration:}
+No special installation is required beyond Python 3.x. The implementation consists of three Python scripts:
+\begin{itemize}
+  \item \texttt{mapper.py}: Implements the map phase
+  \item \texttt{reducer.py}: Implements the reduce phase
+  \item \texttt{word\_count.py}: Orchestrates the MapReduce pipeline
+\end{itemize}
+
+For distributed execution, this implementation is compatible with Hadoop Streaming, which allows running any executable as a mapper or reducer. To use with Hadoop, one would run:
+\begin{lstlisting}[language=bash]
+hadoop jar hadoop-streaming.jar \
+  -mapper mapper.py \
+  -reducer reducer.py \
+  -input input_dir \
+  -output output_dir
+\end{lstlisting}
+
+\textbf{Advantages:}
+\begin{itemize}
+  \item Simple and lightweight: no complex framework setup required for basic testing
+  \item Follows standard MapReduce pattern: mapper reads from stdin, reducer processes sorted key-value pairs
+  \item Compatible with Hadoop Streaming for scaling to distributed systems
+  \item Easy to understand and modify for educational purposes
+  \item Uses standard Unix-style I/O (stdin/stdout), making it portable
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+  \item Single-machine execution does not leverage distributed computing benefits
+  \item No built-in fault tolerance or task retry mechanisms
+  \item Manual orchestration required (handled by \texttt{word\_count.py})
+  \item For production use, a full MapReduce framework like Hadoop or Spark would be more appropriate
+\end{itemize}
+
+\section*{Mapper and Reducer Design}
+
+\textbf{Input Format:}
+The system accepts plain text files where each line represents a document or text segment. The mapper processes input line by line from standard input, which is the standard MapReduce input pattern.
+
+\textbf{Mapper Logic:}
+The mapper (\texttt{mapper.py}) performs the following steps:
+\begin{enumerate}
+  \item Reads each line from standard input
+  \item Converts text to lowercase for case-insensitive word counting
+  \item Tokenizes the line using regular expressions to extract words (sequences of alphabetic characters)
+  \item Filters out punctuation and non-alphabetic characters
+  \item Emits key-value pairs in the format \texttt{(word, 1)} for each word found
+\end{enumerate}
+
+The tokenization uses the regular expression \texttt{\textbackslash b[a-z]+\textbackslash b} to match word boundaries and extract only alphabetic words. This approach:
+\begin{itemize}
+  \item Normalizes words to lowercase
+  \item Removes punctuation automatically
+  \item Handles multiple spaces and special characters gracefully
+  \item Does not filter stop words (all words are counted equally)
+\end{itemize}
+
+\textbf{Intermediate Key-Value Pairs:}
+The mapper emits pairs in the format \texttt{word\textbackslash t1} (tab-separated), where:
+\begin{itemize}
+  \item Key: The word (lowercase, alphabetic only)
+  \item Value: The count (always 1 for each occurrence)
+\end{itemize}
+
+\textbf{Shuffle and Sort Phase:}
+In a full MapReduce framework, the shuffle phase would automatically group all values by key and sort them. In our standalone implementation, the reducer receives sorted input because Python's subprocess pipes maintain order, and the reducer processes keys sequentially.
+
+\textbf{Reducer Logic:}
+The reducer (\texttt{reducer.py}) performs aggregation:
+\begin{enumerate}
+  \item Reads key-value pairs from standard input (tab-separated)
+  \item Maintains state for the current word and its running count
+  \item When a new word is encountered, outputs the previous word's total count
+  \item Accumulates counts for the same word
+  \item Outputs the final word and its total count at the end
+\end{enumerate}
+
+The reducer assumes input is sorted by key (word), which is guaranteed by the MapReduce framework's shuffle phase in distributed systems, or by the sequential processing in our standalone implementation.
+
+\textbf{Output Format:}
+The final output consists of tab-separated pairs \texttt{word\textbackslash tcount}, where each word appears once with its total occurrence count, sorted alphabetically by word.
+
+\textbf{Data Flow Diagram:}
+The MapReduce word count process follows this flow:
+\begin{enumerate}
+  \item \textbf{Input}: Text files with multiple lines
+  \item \textbf{Map Phase}: Each mapper processes lines independently, emitting \texttt{(word, 1)} pairs
+  \item \textbf{Shuffle/Sort}: Framework groups pairs by word and sorts them
+  \item \textbf{Reduce Phase}: Each reducer receives all pairs for a word (or group of words), sums the counts
+  \item \textbf{Output}: Final word count results \texttt{(word, total\_count)}
+\end{enumerate}
+
+\section*{Implementation Details}
+
+\textbf{Programming Language and Libraries:}
+The implementation uses Python 3.x with only standard library modules:
+\begin{itemize}
+  \item \texttt{sys}: For reading from stdin and writing to stdout
+  \item \texttt{re}: For regular expression-based tokenization
+  \item \texttt{subprocess}: For orchestrating mapper and reducer processes (in \texttt{word\_count.py})
+\end{itemize}
+
+\textbf{Running the Job:}
+The system can be executed in two ways:
+
+\textit{Standalone execution using the orchestrator script:}
+\begin{lstlisting}[language=bash]
+python word_count.py input.txt output.txt
+\end{lstlisting}
+
+This script pipes input through mapper and reducer processes automatically.
+
+\textit{Manual execution (simulating Hadoop Streaming):}
+\begin{lstlisting}[language=bash]
+cat input.txt | python mapper.py | sort | python reducer.py > output.txt
+\end{lstlisting}
+
+The \texttt{sort} command simulates the shuffle/sort phase that would be handled by the MapReduce framework in a distributed system.
+
+\textbf{Code Structure:}
+
+\begin{lstlisting}[language=Python,caption={Mapper implementation}]
+import sys
+import re
+
+def tokenize(line):
+    line = line.strip().lower()
+    words = re.findall(r'\b[a-z]+\b', line)
+    return words
+
+for line in sys.stdin:
+    words = tokenize(line)
+    for word in words:
+        print(f"{word}\t1")
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python,caption={Reducer implementation}]
+import sys
+
+current_word = None
+current_count = 0
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    
+    parts = line.split('\t', 1)
+    if len(parts) != 2:
+        continue
+    
+    word, count = parts[0], parts[1]
+    
+    try:
+        count = int(count)
+    except ValueError:
+        continue
+    
+    if word == current_word:
+        current_count += count
+    else:
+        if current_word is not None:
+            print(f"{current_word}\t{current_count}")
+        current_word = word
+        current_count = count
+
+if current_word is not None:
+    print(f"{current_word}\t{current_count}")
+\end{lstlisting}
+
+\textbf{Optimizations:}
+\begin{itemize}
+  \item \textbf{Case normalization}: All words are converted to lowercase in the mapper, ensuring "The" and "the" are counted together
+  \item \textbf{Efficient tokenization}: Uses regex for fast word extraction
+  \item \textbf{Streaming processing}: Both mapper and reducer process data line by line, minimizing memory usage
+  \item \textbf{Error handling}: Reducer includes validation for malformed input lines
+\end{itemize}
+
+For a production system, additional optimizations could include:
+\begin{itemize}
+  \item \textbf{Combiner}: A local reducer in the mapper phase to reduce network traffic
+  \item \textbf{Multiple reducers}: Partitioning output by word hash to parallelize reduction
+  \item \textbf{Stop word filtering}: Removing common words (the, a, an, etc.) if not needed
+  \item \textbf{Custom partitioner}: For better load balancing across reducers
+\end{itemize}
+
+\section*{Group Work}
+
+\textbf{Choice and Installation of MapReduce Framework:}
+The decision to use a Python-based MapReduce implementation was made to keep the solution simple and educational. The team evaluated Hadoop, Spark, and standalone Python approaches, ultimately choosing the Python approach for its simplicity and compatibility with Hadoop Streaming if scaling is needed later.
+
+\textbf{Implementation of Mapper and Reducer:}
+The mapper and reducer were implemented following the standard MapReduce pattern. The mapper handles text tokenization and normalization, while the reducer performs count aggregation. Both components use standard I/O streams (stdin/stdout) for compatibility with MapReduce frameworks.
+
+\textbf{Experiments and Testing:}
+Testing was performed using sample text files of various sizes:
+\begin{itemize}
+  \item Small files (few KB) for quick validation
+  \item Medium files (hundreds of KB) to verify correctness
+  \item Edge cases: empty files, files with only punctuation, files with special characters
+\end{itemize}
+
+The implementation correctly handles:
+\begin{itemize}
+  \item Case-insensitive word counting
+  \item Punctuation removal
+  \item Multiple spaces and line breaks
+  \item Empty lines and malformed input
+\end{itemize}
+
+Performance measurements showed linear scaling with input size, as expected for a MapReduce implementation. The standalone version processes files efficiently for educational purposes, though distributed execution would be needed for very large datasets.
+
+\textbf{Writing and Formatting of the \LaTeX{} Report:}
+The report was written in \LaTeX{} following the same structure as previous practical works. Code snippets were formatted using the \texttt{listings} package for syntax highlighting. The report documents the implementation choice, design decisions, code structure, and testing approach, providing a complete overview of the Word Count MapReduce implementation.
+
+\end{document}

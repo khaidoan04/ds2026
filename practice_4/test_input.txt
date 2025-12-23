@@ -1,0 +1,7 @@
+The quick brown fox jumps over the lazy dog
+The dog was lazy and the fox was quick
+Brown fox brown dog quick lazy
+MapReduce is a programming model for processing large data sets
+Word count is a classic MapReduce example
+This is a simple test file for word count implementation
+
