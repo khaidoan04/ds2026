@@ -1,0 +1,93 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+}
+
+\title{Practical Work 3: MPI File Transfer}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{MPI Implementation Choice}
+
+Explain here \emph{which} MPI implementation you decided to use (e.g.\ MPICH, Open~MPI, MS-MPI) and why. Mention:
+\begin{itemize}
+  \item Operating system and environment you are using.
+  \item How you installed MPI and the \texttt{mpi4py} (or other language binding) library.
+  \item Advantages or limitations that influenced your choice.
+\end{itemize}
+
+\section*{MPI Service Design}
+
+Describe the design of your MPI-based file transfer service. For example:
+\begin{itemize}
+  \item Which ranks act as \textbf{sender} and \textbf{receiver}.
+  \item What metadata (filename, size, etc.) is exchanged.
+  \item Whether you send the file as a whole or in chunks.
+\end{itemize}
+
+You can include a simple figure of the data flow (e.g.\ using a drawing tool and importing as PDF/PNG) showing how the file moves from the sender process to the receiver process.
+
+\section*{System Organization}
+
+Explain how you organize your code and processes:
+\begin{itemize}
+  \item Directory structure (e.g.\ where \texttt{mpi\_file\_transfer.py} is located).
+  \item How you start the system using \texttt{mpiexec} or \texttt{mpirun}.
+  \item Any scripts or helper tools you use to test your implementation.
+\end{itemize}
+
+\section*{File Transfer Implementation}
+
+Briefly explain how the actual file transfer is implemented. For example, for the provided Python/\texttt{mpi4py} example:
+\begin{itemize}
+  \item Rank 0 reads the file, sends metadata (name, size) with \texttt{comm.send}.
+  \item Rank 0 then sends the raw bytes in a second message.
+  \item Rank 1 receives metadata and bytes, then writes them to disk.
+\end{itemize}
+
+Include a short code snippet that represents the core of your MPI transfer logic:
+
+\begin{lstlisting}[language=Python,caption={Core MPI file transfer snippet}]
+meta = {"name": filename, "size": file_size}
+comm.send(meta, dest=1, tag=0)
+
+with open(filepath, "rb") as f:
+    file_bytes = f.read()
+
+comm.send(file_bytes, dest=1, tag=1)
+\end{lstlisting}
+
+You can replace this snippet with the exact code you implemented (Python, C, C++, etc.).
+
+\section*{Group Work and Responsibilities}
+
+Describe briefly who did what in your group:
+\begin{itemize}
+  \item Design and choice of MPI implementation.
+  \item Implementation of sender and receiver.
+  \item Testing and debugging.
+  \item Writing and formatting the \LaTeX{} report.
+\end{itemize}
+
+\end{document}
+
+
