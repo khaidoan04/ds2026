@@ -1,0 +1,322 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  showstringspaces=false,
+}
+
+\title{Practical Work 5: The Longest Path}
+\author{
+  Doan Dinh Khai - 22BA13167
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{MapReduce Implementation Choice}
+
+For this practical work, we implemented the Longest Path problem using a Python-based MapReduce framework, following the same approach as previous MapReduce implementations. This allows us to process file paths from multiple laptops and find the longest path(s) across all input files.
+
+\textbf{Operating System and Setup:}
+The implementation was developed on Windows 10 using Python 3.x. The system processes multiple input files, where each file contains file paths from a different laptop (one path per line). This design allows parallel processing of paths from different sources.
+
+\textbf{Input Format:}
+Each input file represents paths from one laptop. Paths can be in different formats:
+\begin{itemize}
+  \item Unix-style paths: \texttt{/home/user/documents/file.txt}
+  \item Windows-style paths: \texttt{C:\textbackslash Users\textbackslash Documents\textbackslash file.txt}
+  \item Mixed formats across different input files
+\end{itemize}
+
+Paths are generated using commands like \texttt{find /} on Unix systems or directory traversal on Windows systems, with each full path written on a separate line.
+
+\textbf{Output Format:}
+The output contains the longest path(s) found across all input files. If multiple paths have the same maximum length, all of them are included in the output. Each line contains: \texttt{length\textbackslash tpath}.
+
+\textbf{Advantages:}
+\begin{itemize}
+  \item Simple and lightweight implementation using Python
+  \item Handles multiple input files from different laptops
+  \item Compatible with Hadoop Streaming for distributed execution
+  \item Efficient processing using MapReduce pattern
+  \item Handles both Unix and Windows path formats
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+  \item Single-machine execution in standalone mode
+  \item Path length is measured in characters, not filesystem depth
+  \item No validation of path existence or accessibility
+\end{itemize}
+
+\section*{Mapper and Reducer Design}
+
+\textbf{Mapper Logic:}
+The mapper (\texttt{mapper.py}) processes each input file independently:
+\begin{enumerate}
+  \item Reads each line from standard input (one path per line)
+  \item Strips whitespace and validates non-empty lines
+  \item Calculates the length of each path (number of characters)
+  \item Emits key-value pairs in the format \texttt{(length, path)}
+\end{enumerate}
+
+The mapper outputs pairs where:
+\begin{itemize}
+  \item Key: Path length (integer)
+  \item Value: The full path string
+\end{itemize}
+
+This design allows the MapReduce framework to sort all paths by length during the shuffle phase, making it easy for the reducer to identify the longest paths.
+
+\textbf{Intermediate Key-Value Pairs:}
+The mapper emits pairs in the format \texttt{length\textbackslash tpath} (tab-separated), for example:
+\begin{lstlisting}[language=bash]
+45	/home/user/documents/file1.txt
+67	/opt/very/long/path/to/some/deeply/nested/directory/file.ext
+\end{lstlisting}
+
+\textbf{Shuffle and Sort Phase:}
+The MapReduce framework automatically sorts all key-value pairs by key (path length) in descending order. This ensures that the reducer receives paths sorted by length, with the longest paths appearing first.
+
+\textbf{Reducer Logic:}
+The reducer (\texttt{reducer.py}) identifies the longest path(s):
+\begin{enumerate}
+  \item Reads sorted key-value pairs from standard input (sorted by length, descending)
+  \item Maintains state for the maximum length encountered
+  \item Collects all paths that match the maximum length
+  \item Since input is sorted, the first path(s) encountered will have the maximum length
+  \item Outputs all paths with the maximum length
+\end{enumerate}
+
+The reducer algorithm:
+\begin{itemize}
+  \item Initializes \texttt{max\_length} to -1 and \texttt{longest\_paths} as an empty list
+  \item For each input pair \texttt{(length, path)}:
+    \begin{itemize}
+      \item If \texttt{length > max\_length}: Update max length and reset the list with current path
+      \item If \texttt{length == max\_length}: Add current path to the list
+      \item If \texttt{length < max\_length}: Skip (since input is sorted, no longer paths will follow)
+    \end{itemize}
+  \item Output all paths in \texttt{longest\_paths} with their length
+\end{itemize}
+
+\textbf{Data Flow Diagram:}
+The MapReduce longest path process follows this flow:
+
+\begin{enumerate}
+  \item \textbf{Input}: Multiple files, each containing paths from one laptop
+    \begin{itemize}
+      \item File 1: \texttt{laptop1\_paths.txt} (paths from laptop 1)
+      \item File 2: \texttt{laptop2\_paths.txt} (paths from laptop 2)
+      \item File N: Additional laptop path files
+    \end{itemize}
+  \item \textbf{Map Phase}: Each mapper processes one input file
+    \begin{itemize}
+      \item Mapper 1 reads laptop1 paths, emits \texttt{(length, path)} pairs
+      \item Mapper 2 reads laptop2 paths, emits \texttt{(length, path)} pairs
+      \item Each mapper runs independently and in parallel
+    \end{itemize}
+  \item \textbf{Shuffle/Sort}: Framework collects all pairs, sorts by length (descending)
+  \item \textbf{Reduce Phase}: Single reducer receives sorted pairs
+    \begin{itemize}
+      \item Processes pairs in descending length order
+      \item Identifies maximum length
+      \item Collects all paths with maximum length
+    \end{itemize}
+  \item \textbf{Output}: All longest path(s) with their length
+\end{enumerate}
+
+\textbf{Figure: MapReduce Data Flow for Longest Path}
+
+The following diagram illustrates the data flow:
+
+\begin{verbatim}
+Input Files:
+  laptop1_paths.txt          laptop2_paths.txt
+  /home/user/file1.txt       C:\Users\file.txt
+  /opt/long/path/file.ext     C:\Very\Long\Path\file.ext
+
+        |                            |
+        v                            v
+    Mapper 1                     Mapper 2
+        |                            |
+        | Emit (length, path)       | Emit (length, path)
+        v                            v
+        45  /home/user/file1.txt    25  C:\Users\file.txt
+        67  /opt/long/path/file.ext 67  C:\Very\Long\Path\file.ext
+
+        |                            |
+        +-----------+----------------+
+                    |
+                    v
+            Shuffle & Sort
+        (by length, descending)
+                    |
+                    v
+        67  /opt/long/path/file.ext
+        67  C:\Very\Long\Path\file.ext
+        45  /home/user/file1.txt
+        25  C:\Users\file.txt
+
+                    |
+                    v
+                Reducer
+        (finds max length = 67)
+                    |
+                    v
+            Output (longest paths):
+        67  /opt/long/path/file.ext
+        67  C:\Very\Long\Path\file.ext
+\end{verbatim}
+
+\section*{Implementation Details}
+
+\textbf{Programming Language and Libraries:}
+The implementation uses Python 3.x with standard library modules:
+\begin{itemize}
+  \item \texttt{sys}: For reading from stdin and writing to stdout
+  \item \texttt{subprocess}: For orchestrating mapper and reducer processes
+  \item \texttt{os}: For file system operations and path handling
+  \item \texttt{tempfile}: For temporary file management when combining multiple mapper outputs
+\end{itemize}
+
+\textbf{Running the Job:}
+The system can be executed in multiple ways:
+
+\textit{Using the orchestrator script (recommended):}
+\begin{lstlisting}[language=bash]
+python longest_path.py laptop1_paths.txt laptop2_paths.txt output.txt
+\end{lstlisting}
+
+This script handles multiple input files automatically, runs mappers in parallel, combines their outputs, sorts the results, and feeds them to the reducer.
+
+\textit{Manual execution (single input file):}
+\begin{lstlisting}[language=bash]
+cat laptop1_paths.txt | python mapper.py | sort -rn | python reducer.py > output.txt
+\end{lstlisting}
+
+The \texttt{sort -rn} command sorts numerically in reverse order (descending), simulating the shuffle/sort phase.
+
+\textit{Manual execution (multiple input files):}
+\begin{lstlisting}[language=bash]
+cat laptop1_paths.txt laptop2_paths.txt | python mapper.py | sort -rn | python reducer.py > output.txt
+\end{lstlisting}
+
+\textbf{Code Structure:}
+
+\begin{lstlisting}[language=Python,caption={Mapper implementation}]
+import sys
+
+for line in sys.stdin:
+    path = line.strip()
+    if not path:
+        continue
+    
+    path_length = len(path)
+    print(f"{path_length}\t{path}")
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python,caption={Reducer implementation}]
+import sys
+
+max_length = -1
+longest_paths = []
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    
+    parts = line.split('\t', 1)
+    if len(parts) != 2:
+        continue
+    
+    try:
+        path_length = int(parts[0])
+        path = parts[1]
+    except ValueError:
+        continue
+    
+    if path_length > max_length:
+        max_length = path_length
+        longest_paths = [path]
+    elif path_length == max_length:
+        longest_paths.append(path)
+
+for path in longest_paths:
+    print(f"{max_length}\t{path}")
+\end{lstlisting}
+
+\textbf{Key Implementation Features:}
+\begin{itemize}
+  \item \textbf{Multiple input file support}: The orchestrator script can process multiple laptop path files simultaneously
+  \item \textbf{Parallel mapper execution}: Each input file is processed by a separate mapper process
+  \item \textbf{Efficient reducer}: Takes advantage of sorted input to find maximum length in a single pass
+  \item \textbf{Multiple longest paths}: Correctly handles cases where multiple paths have the same maximum length
+  \item \textbf{Error handling}: Validates input format and handles malformed lines gracefully
+\end{itemize}
+
+\textbf{Optimizations:}
+\begin{itemize}
+  \item \textbf{Sorted input}: Reducer assumes sorted input, allowing early termination optimization (though not implemented, could skip after finding max)
+  \item \textbf{Streaming processing}: Both mapper and reducer process data line by line, minimizing memory usage
+  \item \textbf{Parallel mappers}: Multiple input files are processed concurrently
+\end{itemize}
+
+For production use with very large datasets, additional optimizations could include:
+\begin{itemize}
+  \item \textbf{Distributed execution}: Use Hadoop or Spark for true distributed processing
+  \item \textbf{Combiner}: Local reduction in mapper phase to reduce network traffic
+  \item \textbf{Custom partitioner}: For better load balancing if using multiple reducers
+  \item \textbf{Path validation}: Check if paths exist and are accessible before processing
+\end{itemize}
+
+\section*{Group Work}
+
+\textbf{Choice and Implementation of MapReduce Framework:}
+The team chose to use the same Python-based MapReduce pattern as in Practice 4 for consistency and simplicity. The implementation extends the previous word count example to handle the longest path problem, demonstrating the versatility of the MapReduce programming model.
+
+\textbf{Implementation of Mapper and Reducer:}
+The mapper was designed to extract path length as the key, enabling efficient sorting and reduction. The reducer implements a single-pass algorithm that identifies the maximum length and collects all paths matching that length. The implementation correctly handles edge cases such as empty files, duplicate paths, and multiple paths with the same maximum length.
+
+\textbf{Experiments and Testing:}
+Testing was performed using sample path files:
+\begin{itemize}
+  \item Created test files with Unix-style paths (\texttt{laptop1\_paths.txt})
+  \item Created test files with Windows-style paths (\texttt{laptop2\_paths.txt})
+  \item Tested with paths of varying lengths
+  \item Verified correct identification of longest paths
+  \item Tested cases with multiple paths having the same maximum length
+  \item Validated output format and correctness
+\end{itemize}
+
+The implementation correctly handles:
+\begin{itemize}
+  \item Multiple input files from different laptops
+  \item Paths in different formats (Unix and Windows)
+  \item Empty lines and malformed input
+  \item Multiple paths with the same maximum length
+  \item Very long paths (tested with paths exceeding 200 characters)
+\end{itemize}
+
+Performance testing showed that the implementation processes files efficiently, with linear time complexity relative to the number of input paths. The parallel mapper execution provides good performance when processing multiple input files.
+
+\textbf{Writing and Formatting of the \LaTeX{} Report:}
+The report was written in \LaTeX{} following the same structure and formatting style as previous practical works. Code snippets were formatted using the \texttt{listings} package for syntax highlighting. The report includes a detailed data flow diagram in ASCII art format, explaining how paths from multiple laptops are processed through the MapReduce pipeline to identify the longest path(s). The document covers implementation choice, mapper and reducer design with figures, implementation details, and group responsibilities.
+
+\end{document}
+

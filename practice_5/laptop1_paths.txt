@@ -1,0 +1,7 @@
+/home/user/documents/file1.txt
+/usr/local/bin/script.sh
+/var/log/system.log
+/home/user/projects/myproject/src/main/java/com/example/Application.java
+/opt/very/long/path/to/some/deeply/nested/directory/file.ext
+/home/user/documents/report.pdf
+

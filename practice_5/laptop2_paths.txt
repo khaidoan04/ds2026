@@ -1,0 +1,7 @@
+C:\Users\Documents\file.txt
+C:\Program Files\Application\bin\executable.exe
+C:\Windows\System32\drivers\etc\hosts
+C:\Users\Projects\VeryLongProjectName\src\main\resources\config\application.properties
+D:\Data\Backup\2024\January\Archive\Files\document.pdf
+C:\Users\Desktop\short.txt
+
